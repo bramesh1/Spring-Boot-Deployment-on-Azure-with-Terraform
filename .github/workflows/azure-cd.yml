@@ -1,0 +1,99 @@
+name: Deploy Spring Boot App to Azure
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    - name: Set up Terraform
+      uses: hashicorp/setup-terraform@v2
+      with:
+        terraform_version: 1.10.5
+
+    - name: Terraform Init
+      run: |
+        cd terraform
+        terraform init
+
+    - name: Try to Import Existing Resources
+      id: import
+      continue-on-error: true
+      run: |
+        cd terraform
+        terraform import azurerm_resource_group.rg /subscriptions/${{ secrets.AZURE_SUBSCRIPTION_ID }}/resourceGroups/springboot-rg
+        terraform import azurerm_service_plan.asp /subscriptions/${{ secrets.AZURE_SUBSCRIPTION_ID }}/resourceGroups/springboot-rg/providers/Microsoft.Web/serverFarms/springboot-asp
+      
+      env:
+        TF_VAR_client_id: ${{ secrets.AZURE_CLIENT_ID }} 
+        TF_VAR_client_secret: ${{ secrets.AZURE_CLIENT_SECRET }} 
+        TF_VAR_subscription_id: ${{ secrets.AZURE_SUBSCRIPTION_ID }} 
+        TF_VAR_tenant_id: ${{ secrets.AZURE_TENANT_ID }}
+
+    - name: Terraform Plan
+      run: |
+        cd terraform
+        terraform plan -out=tfplan
+      env:
+        TF_VAR_client_id: ${{ secrets.AZURE_CLIENT_ID }} 
+        TF_VAR_client_secret: ${{ secrets.AZURE_CLIENT_SECRET }} 
+        TF_VAR_subscription_id: ${{ secrets.AZURE_SUBSCRIPTION_ID }} 
+        TF_VAR_tenant_id: ${{ secrets.AZURE_TENANT_ID }}
+    - name: Terraform Apply
+      run: |
+        cd terraform
+        terraform apply -auto-approve
+        
+      env:
+        TF_VAR_client_id: ${{ secrets.AZURE_CLIENT_ID }}
+        TF_VAR_client_secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+        TF_VAR_subscription_id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+        TF_VAR_tenant_id: ${{ secrets.AZURE_TENANT_ID }}
+
+    - name: Set up Java
+      uses: actions/setup-java@v3
+      with:
+        distribution: 'temurin'
+        java-version: '17'
+
+    - name: Build Spring Boot Application
+      run: |
+        cd demo
+        mvn clean package
+        mkdir artifact
+        cp target/*.jar artifact/app.jar
+
+    - name: Retrieve Web App Name
+      id: get_app_name
+      run: |
+          echo "Retrieving webapp_name from Terraform..."
+          APP_NAME=$(terraform -chdir=terraform output -raw webapp_name | grep -o '^[a-zA-Z0-9\-]*')
+          echo "Terraform output: $APP_NAME"
+
+          if [[ -z "$APP_NAME" ]]; then
+            echo "Error: webapp_name is empty!"
+            exit 1
+          fi   
+
+          echo "Deploying to $APP_NAME"
+          echo "app_name=$APP_NAME" >> "$GITHUB_ENV"
+    
+    - name: Azure Login
+      uses: azure/login@v1
+      with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      
+    - name: Deploy to Azure Web App
+      uses: azure/webapps-deploy@v2
+      with:
+          app-name: ${{ env.app_name }}
+          package: demo/target/demo-0.0.1-SNAPSHOT.jar
+          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
