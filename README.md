@@ -13,12 +13,12 @@ This repository contains a Spring Boot web application that has been successfull
 
 ## Deployment Workflow
 
-Our deployment workflow follows these key steps:
+Our deployment workflow follows these key steps: 
 
 1. **Local Development & Testing**
    - Developed the Spring Boot application locally
    - Ran thorough testing to ensure functionality
-   - Runs `mvn clean package` to generate the `.jar` file.
+   - Runs `mvn clean package` to generate the `.jar` file
 
 2. **Source Control**
    - Maintained code in this Git repository
